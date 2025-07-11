@@ -358,6 +358,7 @@ type Mval struct {
 	IntegrityRegisters *IntegrityRegisters `cbor:"14,keyasint,omitempty" json:"integrity-registers,omitempty"`
 	TcbStatus          *string             `cbor:"10001,keyasint,omitempty" json:"tcb-status,omitempty"`
 	TcbDate            *time.Time          `cbor:"10002,keyasint,omitempty" json:"tcb-date,omitempty"`
+	TcbStatusDetails   *[]string           `cbor:"10003,keyasint,omitempty" json:"tcb-status-details,omitempty"`
 	Extensions
 }
 
@@ -448,6 +449,7 @@ func (o Mval) Valid() error {
 		o.IntegrityRegisters == nil &&
 		o.TcbStatus == nil &&
 		o.TcbDate == nil &&
+		o.TcbStatusDetails == nil &&
 		o.IsEmpty() {
 
 		return fmt.Errorf("no measurement value set")
@@ -493,7 +495,7 @@ func (o Mval) Valid() error {
 
 	// Validate TcbStatus
 	if o.TcbStatus != nil {
-		if *o.TcbStatus != "Up-to-date" && *o.TcbStatus != "Out-of-date" {
+		if *o.TcbStatus != "UpToDate" && *o.TcbStatus != "OutOfDate" {
 			return fmt.Errorf("invalid TCB status: %s", *o.TcbStatus)
 		}
 	}
@@ -785,8 +787,8 @@ func (o *Measurement) SetName(name string) *Measurement {
 // of the target measurement
 func (o *Measurement) SetTcbStatus(tcbstatus string) *Measurement {
 	if o != nil {
-		if tcbstatus != "Up-to-date" &&
-			tcbstatus != "Out-of-date" {
+		if tcbstatus != "UpToDate" &&
+			tcbstatus != "OutOfDate" {
 			return nil
 		}
 		o.Val.TcbStatus = &tcbstatus
@@ -799,6 +801,15 @@ func (o *Measurement) SetTcbStatus(tcbstatus string) *Measurement {
 func (o *Measurement) SetTcbDate(tcbdate time.Time) *Measurement {
 	if o != nil {
 		o.Val.TcbDate = &tcbdate
+	}
+	return o
+}
+
+// SetTcbStatusDetails sets the supplied tcbstatusdetails in the measurement-values-map
+// of the target measurement
+func (o *Measurement) SetTcbStatusDetails(tcbstatusdetails []string) *Measurement {
+	if o != nil {
+		o.Val.TcbStatusDetails = &tcbstatusdetails
 	}
 	return o
 }
