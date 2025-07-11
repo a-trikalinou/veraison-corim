@@ -356,8 +356,8 @@ type Mval struct {
 	UUID               *UUID               `cbor:"10,keyasint,omitempty" json:"uuid,omitempty"`
 	Name               *string             `cbor:"11,keyasint,omitempty" json:"name,omitempty"`
 	IntegrityRegisters *IntegrityRegisters `cbor:"14,keyasint,omitempty" json:"integrity-registers,omitempty"`
-	TcbStatus          *string             `cbor:"-1,keyasint,omitempty" json:"tcb-status,omitempty"`
-	TcbDate            *time.Time          `cbor:"-2,keyasint,omitempty" json:"tcb-date,omitempty"`
+	TcbStatus          *string             `cbor:"10001,keyasint,omitempty" json:"tcb-status,omitempty"`
+	TcbDate            *time.Time          `cbor:"10002,keyasint,omitempty" json:"tcb-date,omitempty"`
 	Extensions
 }
 
