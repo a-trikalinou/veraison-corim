@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"time"
 
 	"github.com/veraison/corim/encoding"
 	"github.com/veraison/corim/extensions"
@@ -355,6 +356,8 @@ type Mval struct {
 	UUID               *UUID               `cbor:"10,keyasint,omitempty" json:"uuid,omitempty"`
 	Name               *string             `cbor:"11,keyasint,omitempty" json:"name,omitempty"`
 	IntegrityRegisters *IntegrityRegisters `cbor:"14,keyasint,omitempty" json:"integrity-registers,omitempty"`
+	TcbStatus          *string             `cbor:"-1,keyasint,omitempty" json:"tcb-status,omitempty"`
+	TcbDate            *time.Time          `cbor:"-2,keyasint,omitempty" json:"tcb-date,omitempty"`
 	Extensions
 }
 
@@ -428,6 +431,7 @@ func (o Mval) MarshalJSON() ([]byte, error) {
 // Valid returns an error if none of the measurement values are set and the Extensions are empty.
 // nolint:gocritic
 func (o Mval) Valid() error {
+
 	// Check if no measurement values are set
 	if o.Ver == nil &&
 		o.SVN == nil &&
@@ -442,6 +446,8 @@ func (o Mval) Valid() error {
 		o.UUID == nil &&
 		o.Name == nil &&
 		o.IntegrityRegisters == nil &&
+		o.TcbStatus == nil &&
+		o.TcbDate == nil &&
 		o.IsEmpty() {
 
 		return fmt.Errorf("no measurement value set")
@@ -482,6 +488,13 @@ func (o Mval) Valid() error {
 		// Must be valid IPv4 or IPv6 (i.e., .To4() != nil or .To16() != nil)
 		if ip.To4() == nil && ip.To16() == nil {
 			return fmt.Errorf("invalid IP address: %s", ip.String())
+		}
+	}
+
+	// Validate TcbStatus
+	if o.TcbStatus != nil {
+		if *o.TcbStatus != "Up-to-date" && *o.TcbStatus != "Out-of-date" {
+			return fmt.Errorf("invalid TCB status: %s", *o.TcbStatus)
 		}
 	}
 
@@ -764,6 +777,28 @@ func (o *Measurement) SetUUID(u UUID) *Measurement {
 func (o *Measurement) SetName(name string) *Measurement {
 	if o != nil {
 		o.Val.Name = &name
+	}
+	return o
+}
+
+// SetTcbStatus sets the supplied tcbstatus in the measurement-values-map
+// of the target measurement
+func (o *Measurement) SetTcbStatus(tcbstatus string) *Measurement {
+	if o != nil {
+		if tcbstatus != "Up-to-date" &&
+			tcbstatus != "Out-of-date" {
+			return nil
+		}
+		o.Val.TcbStatus = &tcbstatus
+	}
+	return o
+}
+
+// SetTcbDate sets the supplied tcbdate in the measurement-values-map
+// of the target measurement
+func (o *Measurement) SetTcbDate(tcbdate time.Time) *Measurement {
+	if o != nil {
+		o.Val.TcbDate = &tcbdate
 	}
 	return o
 }
