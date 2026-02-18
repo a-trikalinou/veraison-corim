@@ -1,4 +1,4 @@
-// Copyright 2024 Contributors to the Veraison project.
+// Copyright 2026 Contributors to the Veraison project.
 // SPDX-License-Identifier: Apache-2.0
 package corim
 
@@ -84,7 +84,7 @@ func TestProfileManifest_getters(t *testing.T) {
 	assert.NotNil(t, s.Meta.Signer.IMapValue)
 }
 
-func TestProfileManifest_marshaling(t *testing.T) {
+func TestProfileManifest_Marshaling_UnMarshaling(t *testing.T) {
 	type corimExtensions struct {
 		Extension1 *string `cbor:"-1,keyasint,omitempty" json:"ext1,omitempty"`
 	}
@@ -106,12 +106,13 @@ func TestProfileManifest_marshaling(t *testing.T) {
 		Add(comid.ExtReferenceValue, &refValExtensions{})
 	err = RegisterProfile(profID, extMap)
 	require.NoError(t, err)
+	defer UnregisterProfile(profID)
 
-	c, err := UnmarshalUnsignedCorimFromCBOR(testGoodUnsignedCorimCBOR)
+	c, err := UnmarshalAndValidateUnsignedCorimFromCBOR(testGoodUnsignedCorimCBOR)
 	assert.NoError(t, err)
 	assert.Nil(t, c.Profile)
 
-	c, err = UnmarshalUnsignedCorimFromCBOR(testUnsignedCorimWithExtensionsCBOR)
+	c, err = UnmarshalAndValidateUnsignedCorimFromCBOR(testUnsignedCorimWithExtensionsCBOR)
 	assert.NoError(t, err)
 
 	assert.Equal(t, profID, c.Profile)
@@ -172,15 +173,85 @@ func TestProfileManifest_marshaling(t *testing.T) {
 		Val.MustGetInt("timestamp")
 	assert.Equal(t, 1720782190, ts)
 
-	s, err := UnmarshalSignedCorimFromCBOR(testGoodSignedCorimCBOR)
+	cmd, err = UnmarshalComidFromJSON(testComidWithExtensionsJSON, profID)
+	assert.NoError(t, err)
+
+	address = cmd.Entities.Values[0].MustGetString("Address")
+	assert.Equal(t, "123 Fake Street", address)
+
+	ts = cmd.Triples.ReferenceValues.Values[0].Measurements.Values[0].
+		Val.MustGetInt("timestamp")
+	assert.Equal(t, 1720782190, ts)
+
+	s, err := UnmarshalAndValidateSignedCorimFromCBOR(testGoodSignedCorimCBOR)
 	assert.NoError(t, err)
 	assert.Nil(t, s.UnsignedCorim.Profile)
 
-	s, err = UnmarshalSignedCorimFromCBOR(testSignedCorimWithExtensionsCBOR)
+	s, err = UnmarshalAndValidateSignedCorimFromCBOR(testSignedCorimWithExtensionsCBOR)
 	assert.NoError(t, err)
 
 	assert.Equal(t, profID, s.UnsignedCorim.Profile)
 	assert.Equal(t, "foo", s.UnsignedCorim.MustGetString("Extension1"))
+}
 
-	UnregisterProfile(profID)
+func TestGetSignedCorim_NilProfile(t *testing.T) {
+	s := GetSignedCorim(nil)
+	assert.NotNil(t, s)
+}
+
+func TestGetSignedCorim_UnregisteredProfile(t *testing.T) {
+	profID, err := eat.NewProfile("http://unregistered.example.com")
+	require.NoError(t, err)
+
+	s := GetSignedCorim(profID)
+	assert.NotNil(t, s)
+}
+
+func TestGetUnsignedCorim_NilProfile(t *testing.T) {
+	c := GetUnsignedCorim(nil)
+	assert.NotNil(t, c)
+}
+
+func TestGetUnsignedCorim_UnregisteredProfile(t *testing.T) {
+	profID, err := eat.NewProfile("http://unregistered.example.com")
+	require.NoError(t, err)
+
+	c := GetUnsignedCorim(profID)
+	assert.NotNil(t, c)
+}
+
+func TestUnmarshalUnsignedCorimFromCBOR_NoTag(t *testing.T) {
+	// Test with invalid data (no tag)
+	_, err := UnmarshalUnsignedCorimFromCBOR([]byte{0x00, 0x01, 0x02})
+	assert.Error(t, err)
+}
+
+func TestUnmarshalUnsignedCorimFromJSON_Invalid(t *testing.T) {
+	_, err := UnmarshalUnsignedCorimFromJSON([]byte(`{invalid`))
+	assert.Error(t, err)
+}
+
+func TestUnmarshalSignedCorimFromCBOR_Invalid(t *testing.T) {
+	_, err := UnmarshalSignedCorimFromCBOR([]byte{0x00, 0x01, 0x02})
+	assert.Error(t, err)
+}
+
+func TestUnmarshalComidFromCBOR_NilProfile(t *testing.T) {
+	// Build a valid comid with triples and serialize to CBOR
+	c, err := UnmarshalComidFromJSON(testComidJSON, nil)
+	require.NoError(t, err)
+
+	cborData, err := c.ToCBOR()
+	require.NoError(t, err)
+
+	result, err := UnmarshalComidFromCBOR(cborData, nil)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+}
+
+func TestUnmarshalComidFromJSON_NilProfile(t *testing.T) {
+	// Use testComidJSON embedded file, which has valid comid
+	result, err := UnmarshalComidFromJSON(testComidJSON, nil)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
 }

@@ -1,0 +1,54 @@
+# PSA CoRIM with INVALID Implementation ID:
+# - PSA profile (tag:arm.com,2025:psa#1.0.0)
+# - INVALID: Implementation ID is 31 bytes (must be exactly 32)
+# - This is a valid CoRIM but invalid for PSA profile
+---
+tag: 501
+value:
+  0: psa-invalid-impl-id-corim
+  3: "tag:arm.com,2025:psa#1.0.0"
+  1:
+    - tag: 506
+      value:
+        encodedCBOR:
+          0: en-GB
+          1:
+            0: !!binary |-
+              Q7vjfy5hSzOu01PP8UKLFg==
+          2:
+            - 0: ACME Ltd.
+              1:
+                tag: 32
+                value: https://acme.example
+              2:
+                - 0
+                - 1
+                - 2
+          4:
+            # reference-triples (key 0)
+            0:
+              - - 0:
+                    # class with INVALID 31-byte Implementation ID
+                    0:
+                      tag: 560
+                      value: !!binary |-
+                        MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MA==
+                    1: ACME
+                    2: RoadRunner
+                - - 0: "psa.software-component"
+                    1:
+                      # version (key 0) - optional
+                      0:
+                        0: 2.1.0
+                      # digests (key 2) - mandatory
+                      2:
+                        - - 1
+                          - !!binary |-
+                            h0KPxSKAPTEGXnvOPPA/5HUJZjHl4Hu9eg/eYMTPJcc=
+                      # name (key 11) - optional
+                      11: BL
+                      # cryptokeys (key 13) - signer-id: tagged-bytes with 32 bytes
+                      13:
+                        - tag: 560
+                          value: !!binary |-
+                            MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=

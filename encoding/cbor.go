@@ -1,4 +1,4 @@
-// Copyright 2023-2024 Contributors to the Veraison project.
+// Copyright 2023-2025 Contributors to the Veraison project.
 // SPDX-License-Identifier: Apache-2.0
 
 package encoding
@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -47,6 +48,13 @@ func doSerializeStructToCBOR(
 
 		if collectEmbedded(&typeField, valField, &embeds) {
 			continue
+		}
+
+		_, ok := typeField.Tag.Lookup("field-cache")
+		if ok {
+			if err := addCachedFieldsToMapCBOR(em, valField, rawMap); err != nil {
+				return err
+			}
 		}
 
 		tag, ok := typeField.Tag.Lookup("cbor")
@@ -129,12 +137,19 @@ func doPopulateStructFromCBOR(
 	}
 
 	var embeds []embedded
+	var fieldCache reflect.Value
 
 	for i := 0; i < structVal.NumField(); i++ {
 		typeField := structType.Field(i)
 		valField := structVal.Field(i)
 
 		if collectEmbedded(&typeField, valField, &embeds) {
+			continue
+		}
+
+		_, ok := typeField.Tag.Lookup("field-cache")
+		if ok {
+			fieldCache = valField
 			continue
 		}
 
@@ -192,7 +207,9 @@ func doPopulateStructFromCBOR(
 		}
 	}
 
-	return nil
+	// Any remaining contents of rawMap will be added to the field cache,
+	// if current struct has one.
+	return updateFieldCacheCBOR(dm, fieldCache, rawMap)
 }
 
 // structFieldsCBOR is a specialized implementation of "OrderedMap", where the
@@ -269,6 +286,7 @@ func (o *structFieldsCBOR) ToCBOR(em cbor.EncMode) ([]byte, error) {
 		return nil, errors.New("mapLen cannot exceed math.MaxUint32")
 	}
 
+	lexSort(em, o.Keys)
 	for _, key := range o.Keys {
 		marshalledKey, err := em.Marshal(key)
 		if err != nil {
@@ -413,4 +431,100 @@ func processAdditionalInfo(
 	}
 
 	return mapLen, rest, nil
+}
+
+func addCachedFieldsToMapCBOR(em cbor.EncMode, cacheField reflect.Value, rawMap *structFieldsCBOR) error {
+	if !isMapStringAny(cacheField) {
+		return errors.New("field-cache does not appear to be a map[string]any")
+	}
+
+	if !cacheField.IsValid() || cacheField.IsNil() {
+		// field cache was never set, so nothing to do
+		return nil
+	}
+
+	for _, key := range cacheField.MapKeys() {
+		keyText := key.String()
+		keyInt, err := strconv.Atoi(keyText)
+		if err != nil {
+			return fmt.Errorf(
+				"cached field name not an integer (cannot encode to CBOR): %s",
+				keyText,
+			)
+		}
+
+		data, err := em.Marshal(cacheField.MapIndex(key).Interface())
+		if err != nil {
+			return fmt.Errorf(
+				"error marshaling field-cache entry %q: %w",
+				keyText,
+				err,
+			)
+		}
+
+		if err := rawMap.Add(keyInt, cbor.RawMessage(data)); err != nil {
+			return fmt.Errorf(
+				"could not add field-cache entry %q to serialization map: %w",
+				keyText,
+				err,
+			)
+		}
+	}
+
+	return nil
+}
+
+func updateFieldCacheCBOR(dm cbor.DecMode, cacheField reflect.Value, rawMap *structFieldsCBOR) error {
+	if !cacheField.IsValid() {
+		// current struct does not have a field-cache field
+		return nil
+	}
+
+	if !isMapStringAny(cacheField) {
+		return errors.New("field-cache does not appear to be a map[string]any")
+	}
+
+	if cacheField.IsNil() {
+		cacheField.Set(reflect.MakeMap(cacheField.Type()))
+	}
+
+	for key, rawVal := range rawMap.Fields {
+		var val any
+		if err := dm.Unmarshal(rawVal, &val); err != nil {
+			return fmt.Errorf("could not unmarshal key %d: %w", key, err)
+		}
+
+		keyText := fmt.Sprint(key)
+		keyVal := reflect.ValueOf(keyText)
+		valVal := reflect.ValueOf(val)
+		cacheField.SetMapIndex(keyVal, valVal)
+	}
+
+	return nil
+}
+
+// Lexicographic sorting of CBOR integer keys. See:
+// https://www.ietf.org/archive/id/draft-ietf-cbor-cde-13.html#name-the-lexicographic-map-sorti
+func lexSort(em cbor.EncMode, v []int) {
+	sort.Slice(v, func(i, j int) bool {
+		a, err := em.Marshal(v[i])
+		if err != nil {
+			panic(err) // integer encoding cannot fail
+		}
+
+		b, err := em.Marshal(v[j])
+		if err != nil {
+			panic(err) // integer encoding cannot fail
+		}
+
+		for k, v := range a {
+			if v < b[k] {
+				return true
+			} else if v > b[k] {
+				return false
+			}
+		}
+
+		return false
+	})
 }

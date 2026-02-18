@@ -1,4 +1,4 @@
-// Copyright 2021-2024 Contributors to the Veraison project.
+// Copyright 2021-2026 Contributors to the Veraison project.
 // SPDX-License-Identifier: Apache-2.0
 
 package comid
@@ -37,110 +37,6 @@ func TestMeasurement_NewUIntMeasurement(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestMeasurement_NewPSAMeasurement_empty(t *testing.T) {
-	emptyPSARefValID := PSARefValID{}
-
-	_, err := NewPSAMeasurement(emptyPSARefValID)
-
-	assert.EqualError(t, err, "invalid key: invalid psa.refval-id: missing mandatory signer ID")
-}
-
-func TestMeasurement_NewPSAMeasurement_no_values(t *testing.T) {
-	psaRefValID, err := NewPSARefValID(TestSignerID)
-	require.NoError(t, err)
-	psaRefValID.SetLabel("PRoT")
-	psaRefValID.SetVersion("1.2.3")
-	require.NotNil(t, psaRefValID)
-
-	tv, err := NewPSAMeasurement(*psaRefValID)
-	assert.NoError(t, err)
-
-	err = tv.Valid()
-	assert.EqualError(t, err, "no measurement value set")
-}
-
-func TestGetPSARefValID(t *testing.T) {
-	psaRefValID, err := NewPSARefValID(TestSignerID)
-	require.NoError(t, err)
-	psaRefValID.SetLabel("PRoT")
-	psaRefValID.SetVersion("1.2.3")
-	mkey, err := NewMkeyPSARefvalID(psaRefValID)
-	require.NoError(t, err)
-	actual, err := mkey.GetPSARefValID()
-	require.NoError(t, err)
-	assert.Equal(t, *psaRefValID, actual)
-}
-
-func TestGetPSARefValID_NOK(t *testing.T) {
-	mkey := &Mkey{}
-	expected := "MKey is not set"
-	_, err := mkey.GetPSARefValID()
-	assert.EqualError(t, err, expected)
-}
-
-func TestGetPSARefValID_InvalidType(t *testing.T) {
-	expected := "measurement-key type is: *comid.TaggedCCAPlatformConfigID"
-	mkey, err := NewMkeyCCAPlatformConfigID(TestCCALabel)
-	require.NoError(t, err)
-	_, err = mkey.GetPSARefValID()
-	assert.EqualError(t, err, expected)
-}
-
-func TestMeasurement_NewCCAPlatCfgMeasurement_no_values(t *testing.T) {
-	ccaplatID := CCAPlatformConfigID(TestCCALabel)
-
-	tv, err := NewCCAPlatCfgMeasurement(ccaplatID)
-	assert.NoError(t, err)
-
-	err = tv.Valid()
-	assert.EqualError(t, err, "no measurement value set")
-}
-
-func TestGetCCAPlatformConfigID(t *testing.T) {
-	ccaplatID := CCAPlatformConfigID(TestCCALabel)
-	mkey, err := NewMkeyCCAPlatformConfigID(TestCCALabel)
-	require.NoError(t, err)
-	actual, err := mkey.GetCCAPlatformConfigID()
-	require.NoError(t, err)
-	assert.Equal(t, ccaplatID, actual)
-}
-
-func TestGetCCAPlatformConfigID_NOK(t *testing.T) {
-	mkey := &Mkey{}
-	expected := "MKey is not set"
-	_, err := mkey.GetCCAPlatformConfigID()
-	assert.EqualError(t, err, expected)
-}
-
-func TestGetCCAPlatformConfigID_InvalidType(t *testing.T) {
-	mkey := &Mkey{UintMkey(10)}
-	expected := "measurement-key type is: comid.UintMkey"
-	_, err := mkey.GetCCAPlatformConfigID()
-	assert.EqualError(t, err, expected)
-}
-
-func TestMeasurement_NewCCAPlatCfgMeasurement_valid_meas(t *testing.T) {
-	ccaplatID := CCAPlatformConfigID(TestCCALabel)
-
-	tv, err := NewCCAPlatCfgMeasurement(ccaplatID)
-	assert.NoError(t, err)
-
-	tv.SetRawValueBytes([]byte{0x01, 0x02, 0x03, 0x04}, []byte{})
-
-	err = tv.Valid()
-	assert.NoError(t, err)
-}
-
-func TestMeasurement_NewPSAMeasurement_one_value(t *testing.T) {
-	tv, err := NewPSAMeasurement(MustCreatePSARefValID(TestSignerID, "PRoT", "1.2.3"))
-	require.NoError(t, err)
-
-	tv.SetIPaddr(TestIPaddr)
-
-	err = tv.Valid()
-	assert.Nil(t, err)
-}
-
 func TestMeasurement_NewUUIDMeasurement_no_values(t *testing.T) {
 	tv, err := NewUUIDMeasurement(TestUUID)
 	require.NoError(t, err)
@@ -168,7 +64,8 @@ func TestMeasurement_NewUUIDMeasurement_bad_digest(t *testing.T) {
 	tv, err := NewUUIDMeasurement(TestUUID)
 	require.NoError(t, err)
 
-	assert.Nil(t, tv.AddDigest(swid.Sha256, []byte{0xff}))
+	assert.NotNil(t, tv.AddDigest(swid.Sha256, []byte{0xff}))
+	assert.ErrorContains(t, tv.Valid(), "digest at index 0")
 }
 
 func TestMeasurement_NewUUIDMeasurement_bad_ueid(t *testing.T) {
@@ -209,64 +106,6 @@ func TestMkey_Valid_no_value(t *testing.T) {
 	expectedErr := "Mkey value not set"
 	err := mkey.Valid()
 	assert.EqualError(t, err, expectedErr)
-}
-
-func TestMKey_MarshalCBOR_CCAPlatformConfigID_ok(t *testing.T) {
-	tvs := []struct {
-		mkey     CCAPlatformConfigID
-		expected []byte
-	}{
-		{
-			mkey:     CCAPlatformConfigID(TestCCALabel),
-			expected: MustHexDecode(t, "d9025a736363612d706c6174666f726d2d636f6e666967"),
-		},
-		{
-			mkey:     CCAPlatformConfigID("mytestplatformfig"),
-			expected: MustHexDecode(t, "d9025a716d7974657374706c6174666f726d666967"),
-		},
-		{
-			mkey:     CCAPlatformConfigID("mytestlabel2"),
-			expected: MustHexDecode(t, "d9025a6c6d79746573746c6162656c32"),
-		},
-	}
-
-	for _, tv := range tvs {
-		mkey := &Mkey{TaggedCCAPlatformConfigID(tv.mkey)}
-		actual, err := mkey.MarshalCBOR()
-		assert.Nil(t, err)
-		assert.Equal(t, tv.expected, actual)
-		fmt.Printf("CBOR: %x\n", actual)
-	}
-}
-
-func TestMKey_UnmarshalCBOR_CCAPlatformConfigID_ok(t *testing.T) {
-	tvs := []struct {
-		input    []byte
-		expected TaggedCCAPlatformConfigID
-	}{
-		{
-			input:    MustHexDecode(t, "d9025a736363612d706c6174666f726d2d636f6e666967"),
-			expected: TaggedCCAPlatformConfigID(TestCCALabel),
-		},
-		{
-			input:    MustHexDecode(t, "d9025a716d7974657374706c6174666f726d666967"),
-			expected: TaggedCCAPlatformConfigID("mytestplatformfig"),
-		},
-		{
-			input:    MustHexDecode(t, "d9025a6c6d79746573746c6162656c32"),
-			expected: TaggedCCAPlatformConfigID("mytestlabel2"),
-		},
-	}
-
-	for _, tv := range tvs {
-		mkey := &Mkey{}
-		err := mkey.UnmarshalCBOR(tv.input)
-		assert.Nil(t, err)
-		actual, ok := mkey.Value.(*TaggedCCAPlatformConfigID)
-		assert.True(t, ok)
-		assert.Equal(t, tv.expected, *actual)
-		fmt.Printf("CBOR: %x\n", actual)
-	}
 }
 
 func TestMKey_MarshalCBOR_uint_ok(t *testing.T) {
@@ -334,7 +173,7 @@ func TestMkey_UnmarshalCBOR_not_ok(t *testing.T) {
 	}{
 		{
 			input:    []byte{0xAB, 0xCD},
-			expected: "unexpected EOF",
+			expected: "unexpected CBOR major type for mkey: 5",
 		},
 		{
 			input:    []byte{0xCC, 0xDD, 0xFF},
@@ -349,44 +188,6 @@ func TestMkey_UnmarshalCBOR_not_ok(t *testing.T) {
 
 		assert.EqualError(t, err, tv.expected)
 	}
-}
-
-func TestMKey_MarshalJSON_CCAPlatformConfigID_ok(t *testing.T) {
-	refval := TestCCALabel
-	mkey := &Mkey{Value: TaggedCCAPlatformConfigID(refval)}
-
-	expected := `{"type":"cca.platform-config-id","value":"cca-platform-config"}`
-
-	actual, err := mkey.MarshalJSON()
-	assert.Nil(t, err)
-
-	assert.JSONEq(t, expected, string(actual))
-	fmt.Printf("JSON: %x\n", actual)
-}
-
-func TestMKey_UnMarshalJSON_CCAPlatformConfigID_ok(t *testing.T) {
-	input := []byte(`{"type":"cca.platform-config-id","value":"cca-platform-config"}`)
-	expected := TaggedCCAPlatformConfigID(TestCCALabel)
-
-	mKey := &Mkey{}
-
-	err := mKey.UnmarshalJSON(input)
-	assert.Nil(t, err)
-	actual, ok := mKey.Value.(*TaggedCCAPlatformConfigID)
-	assert.True(t, ok)
-	assert.Equal(t, expected, *actual)
-
-}
-
-func TestMKey_UnMarshalJSON_CCAPlatformConfigID_not_ok(t *testing.T) {
-	input := []byte(`{"type":"cca.platform-config-id","value":""}`)
-	expected := "invalid cca.platform-config-id: empty value"
-
-	mKey := &Mkey{}
-
-	err := mKey.UnmarshalJSON(input)
-
-	assert.EqualError(t, err, expected)
 }
 
 func TestMkey_MarshalJSON_uint_ok(t *testing.T) {
@@ -519,6 +320,99 @@ func TestNewUintMkey(t *testing.T) {
 	}
 }
 
+func TestNewStringMkey(t *testing.T) {
+	testString := "foo"
+	testBytes := MustHexDecode(t, "666f6f")
+	testBytesBad := MustHexDecode(t, "ff")
+	testVal := StringMkey(testString)
+
+	tvs := []struct {
+		input    any
+		expected StringMkey
+		err      string
+	}{
+		{
+			input:    testString,
+			expected: testVal,
+		},
+		{
+			input:    &testString,
+			expected: testVal,
+		},
+		{
+			input:    testBytes,
+			expected: testVal,
+		},
+		{
+			input:    &testBytes,
+			expected: testVal,
+		},
+		{
+			input:    testVal,
+			expected: testVal,
+		},
+		{
+			input:    &testVal,
+			expected: testVal,
+		},
+		{
+			input: testBytesBad,
+			err:   "invalid utf-8 string: ff",
+		},
+		{
+			input: &testBytesBad,
+			err:   "invalid utf-8 string: ff",
+		},
+		{
+			input: 7,
+			err:   "unexpected type for StringMkey: int",
+		},
+	}
+
+	for _, tv := range tvs {
+		out, err := NewStringMkey(tv.input)
+		if tv.err != "" {
+			assert.Nil(t, out)
+			assert.EqualError(t, err, tv.err)
+		} else {
+			assert.Equal(t, tv.expected, *out)
+		}
+	}
+}
+
+func TestMKey_string_marshaling_round_trip(t *testing.T) {
+	tvs := []struct {
+		input         *Mkey
+		expected_json []byte
+		expected_cbor []byte
+	}{
+		{
+			input:         MustNewMkey("foo", "string"),
+			expected_json: []byte(`{"type":"string","value":"foo"}`),
+			expected_cbor: MustHexDecode(t, "63666f6f"),
+		},
+	}
+
+	for _, tv := range tvs {
+		actual_json, err := tv.input.MarshalJSON()
+		assert.Nil(t, err)
+		assert.Equal(t, tv.expected_json, actual_json)
+
+		var key Mkey
+		err = key.UnmarshalJSON(actual_json)
+		assert.Nil(t, err)
+		assert.Equal(t, tv.input, &key)
+
+		actual_cbor, err := tv.input.MarshalCBOR()
+		assert.Nil(t, err)
+		assert.Equal(t, tv.expected_cbor, actual_cbor)
+
+		err = key.UnmarshalCBOR(actual_cbor)
+		assert.Nil(t, err)
+		assert.Equal(t, tv.input, &key)
+	}
+}
+
 func TestNewMkeyOID(t *testing.T) {
 	var expectedOID OID
 	require.NoError(t, expectedOID.FromString(TestOID))
@@ -587,15 +481,6 @@ func TestMkey_UnmarshalJSON_regression_issue_100(t *testing.T) {
 
 	assert.Nil(t, err)
 	assert.Equal(t, expected, actual)
-}
-
-func TestMkey_new(t *testing.T) {
-	psaRefValID, err := NewPSARefValID(TestSignerID)
-	require.NoError(t, err)
-
-	key := MustNewMkey(psaRefValID, PSARefValIDType)
-	assert.EqualValues(t, psaRefValID, key.Value)
-	assert.Equal(t, PSARefValIDType, key.Type())
 }
 
 func TestMkey_UintMkey(t *testing.T) {
@@ -682,14 +567,14 @@ func TestMval_Valid(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("Digests valid", func(t *testing.T) {
+	t.Run("Digests invalid", func(t *testing.T) {
 		ds := NewDigests()
-		_ = ds.AddDigest(swid.Sha256, []byte{0xAA, 0xBB})
+		ds.AddDigest(swid.Sha256, []byte{0xAA, 0xBB})
 		mval := Mval{
 			Digests: ds,
 		}
 		err := mval.Valid()
-		assert.NoError(t, err)
+		assert.ErrorContains(t, err, "digest at index 0")
 	})
 
 	t.Run("Extensions valid", func(t *testing.T) {
@@ -703,4 +588,37 @@ func TestMval_Valid(t *testing.T) {
 		err := mval.Valid()
 		assert.NoError(t, err)
 	})
+}
+
+// Test Marshal and Unmarshal of Cryptokeys(tag 13)
+func TestMeasurement_CryptoKeys_RoundTrip(t *testing.T) {
+	// Create a new measurement with a valid key
+	m := MustNewMeasurement("31fb5abf-023e-4992-aa4e-95f9c1503bfa", UUIDType)
+
+	// Create a CryptoKey (using a dummy PKIX base64 key for testing)
+	pkText := `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAGb9ECWmEzf6FQbrBZ9w7lshQhqowtrbLDFw4rXAxZuE=
+-----END PUBLIC KEY-----`
+	ck := MustNewPKIXBase64Key(pkText)
+
+	// Add CryptoKey to Measurement
+	m.AddCryptoKey(ck)
+
+	// Marshal to CBOR
+	// Use em (from cbor.go)
+	data, err := em.Marshal(m)
+	require.NoError(t, err)
+
+	// Check if tag 13 is present in the CBOR output hex
+	// We can try to decode it back to verify.
+
+	// Unmarshal back
+	var m2 Measurement
+	err = dm.Unmarshal(data, &m2)
+	require.NoError(t, err)
+
+	// Verify CryptoKeys are present and correct
+	require.NotNil(t, m2.Val.CryptoKeys)
+	require.Len(t, *m2.Val.CryptoKeys, 1)
+	assert.Equal(t, pkText, (*m2.Val.CryptoKeys)[0].String())
 }

@@ -1,10 +1,9 @@
-// Copyright 2021-2024 Contributors to the Veraison project.
+// Copyright 2021-2026 Contributors to the Veraison project.
 // SPDX-License-Identifier: Apache-2.0
 
 package comid
 
 import (
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -85,13 +84,10 @@ func (o *ClassID) UnmarshalCBOR(data []byte) error {
 //	}
 //
 // where <CLASS_ID_TYPE> must be one of the known IClassIDValue implementation
-// type names (available in this implementation: "uuid", "oid",
-// "psa.impl-id", "int", "bytes"), and <CLASS_ID_VALUE> is the JSON encoding of the underlying
-// class id value. The exact encoding is <CLASS_ID_TYPE> dependent. For the base
-// implementation types it is
-//
+// type names (available in this implementation: "uuid", "oid", "int", "bytes"),
+// and <CLASS_ID_VALUE> is the JSON encoding of the underlying class id value.
+// The exact encoding is <CLASS_ID_TYPE> dependent.
 //		oid: dot-separated integers, e.g. "1.2.3.4"
-//		psa.impl-id: base64-encoded bytes, e.g. "YWNtZS1pbXBsZW1lbnRhdGlvbi1pZC0wMDAwMDAwMDE="
 //		uuid: standard UUID string representation, e.g. "550e8400-e29b-41d4-a716-446655440000"
 //		int: an integer value, e.g. 7
 //	 bytes: a variable length opaque bytes, example {0x07, 0x12, 0x34}
@@ -131,36 +127,13 @@ func (o ClassID) MarshalJSON() ([]byte, error) {
 }
 
 // String returns a printable string of the ClassID value. UUIDs use the
-// canonical 8-4-4-4-12 format, PSA Implementation IDs are base64 encoded.
-// OIDs are output in dotted-decimal notation.
+// canonical 8-4-4-4-12 format, OIDs are output in dotted-decimal notation.
 func (o ClassID) String() string {
 	if o.Value == nil {
 		return ""
 	}
 
 	return o.Value.String()
-}
-
-// SetImplID sets the value of the target ClassID to the supplied PSA
-// Implementation ID (see Section 3.2.2 of draft-tschofenig-rats-psa-token)
-func (o *ClassID) SetImplID(implID ImplID) *ClassID {
-	if o != nil {
-		o.Value = TaggedImplID(implID)
-	}
-	return o
-}
-
-// GetImplID retrieves the value of the PSA Implementation ID
-// (see Section 3.2.2 of draft-tschofenig-rats-psa-token) from ClassID
-func (o ClassID) GetImplID() (ImplID, error) {
-	switch t := o.Value.(type) {
-	case *TaggedImplID:
-		return ImplID(*t), nil
-	case TaggedImplID:
-		return ImplID(t), nil
-	default:
-		return ImplID{}, fmt.Errorf("class-id type is: %T", t)
-	}
 }
 
 type IClassIDValue interface {
@@ -215,104 +188,6 @@ func (o ClassID) GetOID() (string, error) {
 	default:
 		return "", fmt.Errorf("class-id type is: %T", t)
 	}
-}
-
-const ImplIDType = "psa.impl-id"
-
-type ImplID [32]byte
-
-func (o ImplID) String() string {
-	return base64.StdEncoding.EncodeToString(o[:])
-}
-
-func (o ImplID) Valid() error {
-	return nil
-}
-
-type TaggedImplID ImplID
-
-func NewImplIDClassID(val any) (*ClassID, error) {
-	var ret TaggedImplID
-
-	if val == nil {
-		return &ClassID{&TaggedImplID{}}, nil
-	}
-
-	switch t := val.(type) {
-	case []byte:
-		if nb := len(t); nb != 32 {
-			return nil, fmt.Errorf("bad psa.impl-id: got %d bytes, want 32", nb)
-		}
-
-		copy(ret[:], t)
-	case string:
-		v, err := base64.StdEncoding.DecodeString(t)
-		if err != nil {
-			return nil, fmt.Errorf("bad psa.impl-id: %w", err)
-		}
-
-		if nb := len(v); nb != 32 {
-			return nil, fmt.Errorf("bad psa.impl-id: decoded %d bytes, want 32", nb)
-		}
-
-		copy(ret[:], v)
-	case TaggedImplID:
-		copy(ret[:], t[:])
-	case *TaggedImplID:
-		copy(ret[:], (*t)[:])
-	case ImplID:
-		copy(ret[:], t[:])
-	case *ImplID:
-		copy(ret[:], (*t)[:])
-	default:
-		return nil, fmt.Errorf("unexpected type for psa.impl-id: %T", t)
-	}
-
-	return &ClassID{&ret}, nil
-}
-
-func MustNewImplIDClassID(val any) *ClassID {
-	ret, err := NewImplIDClassID(val)
-	if err != nil {
-		panic(err)
-	}
-
-	return ret
-}
-
-func (o TaggedImplID) Valid() error {
-	return ImplID(o).Valid()
-}
-
-func (o TaggedImplID) String() string {
-	return ImplID(o).String()
-}
-
-func (o TaggedImplID) Type() string {
-	return ImplIDType
-}
-
-func (o TaggedImplID) Bytes() []byte {
-	return o[:]
-}
-
-func (o TaggedImplID) MarshalJSON() ([]byte, error) {
-	return json.Marshal((o)[:])
-}
-
-func (o *TaggedImplID) UnmarshalJSON(data []byte) error {
-	var out []byte
-	if err := json.Unmarshal(data, &out); err != nil {
-		return err
-	}
-
-	if len(out) != 32 {
-		return fmt.Errorf("bad psa.impl-id: decoded %d bytes, want 32", len(out))
-	}
-
-	copy((*o)[:], out)
-
-	return nil
 }
 
 func NewOIDClassID(val any) (*ClassID, error) {
@@ -448,6 +323,18 @@ func (o TaggedInt) Bytes() []byte {
 	return ret[:]
 }
 
+// MustNewBytesClassID is like NewBytesClassID except it does not return an
+// error, assuming that the provided value is valid. It panics if that isn't
+// the case.
+func MustNewBytesClassID(val any) *ClassID {
+	ret, err := NewBytesClassID(val)
+	if err != nil {
+		panic(err)
+	}
+
+	return ret
+}
+
 // NewBytesClassID creates a New ClassID of type bytes
 // The supplied interface parameter could be
 // a byte slice, a pointer to a byte slice or a string
@@ -470,11 +357,10 @@ func NewBytesClassID(val any) (*ClassID, error) {
 type IClassIDFactory func(any) (*ClassID, error)
 
 var classIDValueRegister = map[string]IClassIDFactory{
-	OIDType:    NewOIDClassID,
-	UUIDType:   NewUUIDClassID,
-	IntType:    NewIntClassID,
-	BytesType:  NewBytesClassID,
-	ImplIDType: NewImplIDClassID,
+	OIDType:   NewOIDClassID,
+	UUIDType:  NewUUIDClassID,
+	IntType:   NewIntClassID,
+	BytesType: NewBytesClassID,
 }
 
 // RegisterClassIDType registers a new IClassIDValue implementation (created

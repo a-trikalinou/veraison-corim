@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Contributors to the Veraison project.
+// Copyright 2021-2026 Contributors to the Veraison project.
 // SPDX-License-Identifier: Apache-2.0
 
 package comid
@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"unicode/utf8"
 	"time"
 
 	"github.com/veraison/corim/encoding"
@@ -19,8 +20,8 @@ import (
 const MaxUint64 = ^uint64(0)
 
 // Mkey stores a $measured-element-type-choice.
-// The supported types are UUID, PSA refval-id, CCA platform-config-id and unsigned integer
-// TO DO Add tagged OID: see https://github.com/veraison/corim/issues/35
+// The supported types are OID, UUID, unsigned integer, and string.
+// Profile-specific measurement key types can be registered via RegisterMkeyType.
 type Mkey struct {
 	Value IMKeyValue
 }
@@ -70,34 +71,6 @@ func (o Mkey) Valid() error {
 	return nil
 }
 
-func (o Mkey) GetPSARefValID() (PSARefValID, error) {
-	if !o.IsSet() {
-		return PSARefValID{}, errors.New("MKey is not set")
-	}
-	switch t := o.Value.(type) {
-	case *TaggedPSARefValID:
-		return PSARefValID(*t), nil
-	case TaggedPSARefValID:
-		return PSARefValID(t), nil
-	default:
-		return PSARefValID{}, fmt.Errorf("measurement-key type is: %T", t)
-	}
-}
-
-func (o Mkey) GetCCAPlatformConfigID() (CCAPlatformConfigID, error) {
-	if !o.IsSet() {
-		return "", errors.New("MKey is not set")
-	}
-	switch t := o.Value.(type) {
-	case *TaggedCCAPlatformConfigID:
-		return CCAPlatformConfigID(*t), nil
-	case TaggedCCAPlatformConfigID:
-		return CCAPlatformConfigID(t), nil
-	default:
-		return "", fmt.Errorf("measurement-key type is: %T", t)
-	}
-}
-
 func (o Mkey) GetKeyUint() (uint64, error) {
 	switch t := o.Value.(type) {
 	case UintMkey:
@@ -118,14 +91,10 @@ func (o Mkey) GetKeyUint() (uint64, error) {
 //	}
 //
 // where <MKEY_TYPE> must be one of the known IMKeyValue implementation
-// type names (available in the base implementation: "uuid", "oid",
-// "psa.impl-id"), and <MKEY_JSON_VALUE> is the class id value serialized to
-// JSON. The exact serialization is <CLASS_ID_TYPE> depenent. For the base
-// implementation types it is
-//
-//	oid: dot-seprated integers, e.g. "1.2.3.4"
-//	uuid: standard UUID string representation, e.g. "550e8400-e29b-41d4-a716-446655440000"
-//	psa.refval-id: JSON representation of the PSA refval-id
+// type names (available in the base implementation: "uuid", "oid", "uint", "string")
+// and profile-specific types can be registered via RegisterMkeyType.
+// <MKEY_JSON_VALUE> is the measurement key value serialized to JSON.
+// The exact serialization is <MKEY_TYPE> dependent.
 func (o *Mkey) UnmarshalJSON(data []byte) error {
 	var tnv encoding.TypeAndValue
 
@@ -178,18 +147,27 @@ func (o *Mkey) UnmarshalCBOR(data []byte) error {
 	}
 
 	majorType := (data[0] & 0xe0) >> 5
-	if majorType == 6 { // tag
+	switch majorType {
+	case 6: // tag
 		return dm.Unmarshal(data, &o.Value)
+	case 0: // uint
+		var val UintMkey
+		if err := dm.Unmarshal(data, &val); err != nil {
+			return err
+		}
+
+		o.Value = &val
+	case 3: // tstr
+		var val StringMkey
+		if err := dm.Unmarshal(data, &val); err != nil {
+			return err
+		}
+
+		o.Value = &val
+	default:
+		return fmt.Errorf("unexpected CBOR major type for mkey: %d", majorType)
 	}
 
-	// untagged value must be a uint
-
-	var val UintMkey
-	if err := dm.Unmarshal(data, &val); err != nil {
-		return err
-	}
-
-	o.Value = &val
 	return nil
 }
 
@@ -255,6 +233,55 @@ func (o *UintMkey) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+const StringType = "string"
+
+type StringMkey string
+
+func NewStringMkey(val any) (*StringMkey, error) {
+	var ret StringMkey
+
+	if val == nil {
+		return &ret, nil
+	}
+
+	switch t := val.(type) {
+	case StringMkey:
+		ret = t
+	case *StringMkey:
+		ret = *t
+	case string:
+		ret = StringMkey(t)
+	case *string:
+		ret = StringMkey(*t)
+	case []byte:
+		if !utf8.Valid(t) {
+			return nil, fmt.Errorf("invalid utf-8 string: %x", t)
+		}
+		ret = StringMkey(t)
+	case *[]byte:
+		if !utf8.Valid(*t) {
+			return nil, fmt.Errorf("invalid utf-8 string: %x", *t)
+		}
+		ret = StringMkey(*t)
+	default:
+		return nil, fmt.Errorf("unexpected type for StringMkey: %T", t)
+	}
+
+	return &ret, nil
+}
+
+func (o StringMkey) Type() string {
+	return StringType
+}
+
+func (o StringMkey) Valid() error {
+	return nil
+}
+
+func (o StringMkey) String() string {
+	return string(o)
+}
+
 func NewMkeyOID(val any) (*Mkey, error) {
 	ret, err := NewTaggedOID(val)
 	if err != nil {
@@ -282,17 +309,8 @@ func NewMkeyUint(val any) (*Mkey, error) {
 	return &Mkey{ret}, nil
 }
 
-func NewMkeyPSARefvalID(val any) (*Mkey, error) {
-	ret, err := NewTaggedPSARefValID(val)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Mkey{ret}, nil
-}
-
-func NewMkeyCCAPlatformConfigID(val any) (*Mkey, error) {
-	ret, err := NewTaggedCCAPlatformConfigID(val)
+func NewMkeyString(val any) (*Mkey, error) {
+	ret, err := NewStringMkey(val)
 	if err != nil {
 		return nil, err
 	}
@@ -301,7 +319,7 @@ func NewMkeyCCAPlatformConfigID(val any) (*Mkey, error) {
 }
 
 // IMkeyFactory defines the signature for the factory functions that may be
-// registred using RegisterMkeyType to provide a new implementation of the
+// registered using RegisterMkeyType to provide a new implementation of the
 // corresponding type choice. The factory function should create a new *Mkey
 // with the underlying value created based on the provided input. The range of
 // valid inputs is up to the specific type choice implementation, however it
@@ -311,11 +329,10 @@ func NewMkeyCCAPlatformConfigID(val any) (*Mkey, error) {
 type IMkeyFactory = func(val any) (*Mkey, error)
 
 var mkeyValueRegister = map[string]IMkeyFactory{
-	OIDType:                 NewMkeyOID,
-	UUIDType:                NewMkeyUUID,
-	UintType:                NewMkeyUint,
-	PSARefValIDType:         NewMkeyPSARefvalID,
-	CCAPlatformConfigIDType: NewMkeyCCAPlatformConfigID,
+	OIDType:    NewMkeyOID,
+	UUIDType:   NewMkeyUUID,
+	UintType:   NewMkeyUint,
+	StringType: NewMkeyString,
 }
 
 // RegisterMkeyType registers a new IMKeyValue implementation
@@ -355,6 +372,7 @@ type Mval struct {
 	UEID               *eat.UEID           `cbor:"9,keyasint,omitempty" json:"ueid,omitempty"`
 	UUID               *UUID               `cbor:"10,keyasint,omitempty" json:"uuid,omitempty"`
 	Name               *string             `cbor:"11,keyasint,omitempty" json:"name,omitempty"`
+	CryptoKeys         *CryptoKeys         `cbor:"13,keyasint,omitempty" json:"cryptokeys,omitempty"`
 	IntegrityRegisters *IntegrityRegisters `cbor:"14,keyasint,omitempty" json:"integrity-registers,omitempty"`
 	TcbStatus          *string             `cbor:"10001,keyasint,omitempty" json:"tcb-status,omitempty"`
 	TcbDate            *time.Time          `cbor:"10002,keyasint,omitempty" json:"tcb-date,omitempty"`
@@ -446,6 +464,7 @@ func (o Mval) Valid() error {
 		o.UEID == nil &&
 		o.UUID == nil &&
 		o.Name == nil &&
+		o.CryptoKeys == nil &&
 		o.IntegrityRegisters == nil &&
 		o.TcbStatus == nil &&
 		o.TcbDate == nil &&
@@ -465,6 +484,13 @@ func (o Mval) Valid() error {
 	// Validate Digests
 	if o.Digests != nil {
 		if err := o.Digests.Valid(); err != nil {
+			return err
+		}
+	}
+
+	// Validate CryptoKeys
+	if o.CryptoKeys != nil {
+		if err := o.CryptoKeys.Valid(); err != nil {
 			return err
 		}
 	}
@@ -508,9 +534,9 @@ func (o Mval) Valid() error {
 
 // Measurement stores a measurement-map with CBOR and JSON serializations.
 type Measurement struct {
-	Key          *Mkey      `cbor:"0,keyasint,omitempty" json:"key,omitempty"`
-	Val          Mval       `cbor:"1,keyasint" json:"value"`
-	AuthorizedBy *CryptoKey `cbor:"2,keyasint,omitempty" json:"authorized-by,omitempty"`
+	Key          *Mkey       `cbor:"0,keyasint,omitempty" json:"key,omitempty"`
+	Val          Mval        `cbor:"1,keyasint" json:"value"`
+	AuthorizedBy *CryptoKeys `cbor:"2,keyasint,omitempty" json:"authorized-by,omitempty"`
 }
 
 func NewMeasurement(val any, typ string) (*Measurement, error) {
@@ -536,38 +562,6 @@ func NewMeasurement(val any, typ string) (*Measurement, error) {
 
 func MustNewMeasurement(val any, typ string) *Measurement {
 	ret, err := NewMeasurement(val, typ)
-
-	if err != nil {
-		panic(err)
-	}
-
-	return ret
-}
-
-// NewPSAMeasurement instantiates a new measurement-map with the key set to the
-// supplied PSA refval-id
-func NewPSAMeasurement(key any) (*Measurement, error) {
-	return NewMeasurement(key, PSARefValIDType)
-}
-
-func MustNewPSAMeasurement(key any) *Measurement {
-	ret, err := NewPSAMeasurement(key)
-
-	if err != nil {
-		panic(err)
-	}
-
-	return ret
-}
-
-// NewCCAPlatCfgMeasurement instantiates a new measurement-map with the key set to the
-// supplied CCA platform-config-id
-func NewCCAPlatCfgMeasurement(key any) (*Measurement, error) {
-	return NewMeasurement(key, CCAPlatformConfigIDType)
-}
-
-func MustNewCCAPlatCfgMeasurement(key any) *Measurement {
-	ret, err := NewCCAPlatCfgMeasurement(key)
 
 	if err != nil {
 		panic(err)
@@ -676,6 +670,19 @@ func (o *Measurement) AddDigest(algID uint64, digest []byte) *Measurement {
 		o.Val.Digests = ds
 	}
 
+	return o
+}
+
+// AddCryptoKey adds the supplied CryptoKey to the measurement-values-map of the
+// target measurement
+func (o *Measurement) AddCryptoKey(key *CryptoKey) *Measurement {
+	if o != nil {
+		ck := o.Val.CryptoKeys
+		if ck == nil {
+			ck = NewCryptoKeys()
+		}
+		o.Val.CryptoKeys = ck.Add(key)
+	}
 	return o
 }
 

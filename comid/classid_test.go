@@ -28,21 +28,6 @@ func TestClassID_MarshalCBOR_UUID(t *testing.T) {
 	assert.Equal(t, expected, actual)
 }
 
-func TestClassID_MarshalCBOR_ImplID(t *testing.T) {
-	tv := MustNewImplIDClassID(TestImplID)
-
-	// 600 (h'61636D652D696D706C656D656E746174696F6E2D69642D303030303030303031')
-	// tag(600): d9 0258
-	expected := MustHexDecode(t, "d90258582061636d652d696d706c656d656e746174696f6e2d69642d303030303030303031")
-
-	actual, err := tv.MarshalCBOR()
-
-	fmt.Printf("CBOR: %x\n", actual)
-
-	assert.Nil(t, err)
-	assert.Equal(t, expected, actual)
-}
-
 func TestClassID_MarshalCBOR_Empty(t *testing.T) {
 	var tv ClassID
 
@@ -66,19 +51,6 @@ func TestClassID_UnmarshalCBOR_UUID_OK(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, "uuid", actual.Type())
 	assert.Equal(t, TestUUIDString, actual.String())
-}
-
-func TestClassID_UnmarshalCBOR_ImplID_OK(t *testing.T) {
-	tv := MustHexDecode(t, "d90258582061636d652d696d706c656d656e746174696f6e2d69642d303030303030303031")
-
-	expected := b64TestImplID()
-
-	var actual ClassID
-	err := actual.UnmarshalCBOR(tv)
-
-	assert.Nil(t, err)
-	assert.Equal(t, "psa.impl-id", actual.Type())
-	assert.Equal(t, expected, actual.String())
 }
 
 func TestClassID_UnmarshalCBOR_badInput(t *testing.T) {
@@ -105,24 +77,6 @@ func TestClassID_UnmarshalJSON_UUID(t *testing.T) {
 	assert.Equal(t, TestUUIDString, actual.String())
 }
 
-func TestClassID_UnmarshalJSON_ImplID(t *testing.T) {
-	b64ImplID := b64TestImplID()
-
-	tvFmt := `{ "type": "psa.impl-id", "value": "%s" }`
-	// in JSON, impl-id is base64 encoded
-	tv := fmt.Sprintf(tvFmt, b64ImplID)
-
-	expected := b64ImplID
-
-	var actual ClassID
-	err := actual.UnmarshalJSON([]byte(tv))
-
-	assert.Nil(t, err)
-	assert.Equal(t, "psa.impl-id", actual.Type())
-	// the returned string is the base64 encoding of the stored binary
-	assert.Equal(t, expected, actual.String())
-}
-
 func TestClassID_UnmarshalJSON_badInput_unknown_type(t *testing.T) {
 	tv := `{ "type": "FOOBAR", "value": "1234567890" }`
 
@@ -130,36 +84,6 @@ func TestClassID_UnmarshalJSON_badInput_unknown_type(t *testing.T) {
 	err := actual.UnmarshalJSON([]byte(tv))
 
 	assert.EqualError(t, err, "unknown class id type: FOOBAR")
-	assert.Equal(t, "", actual.Type())
-}
-
-func TestClassID_UnmarshalJSON_badInput_missing_value(t *testing.T) {
-	tv := `{ "type": "psa.impl-id" }`
-
-	var actual ClassID
-	err := actual.UnmarshalJSON([]byte(tv))
-
-	assert.EqualError(t, err, "class id decoding failure: no value provided for psa.impl-id")
-	assert.Equal(t, "", actual.Type())
-}
-
-func TestClassID_UnmarshalJSON_badInput_empty_value(t *testing.T) {
-	tv := `{ "type": "psa.impl-id", "value": "" }`
-
-	var actual ClassID
-	err := actual.UnmarshalJSON([]byte(tv))
-
-	assert.EqualError(t, err, "cannot unmarshal class id: bad psa.impl-id: decoded 0 bytes, want 32")
-	assert.Equal(t, "", actual.Type())
-}
-
-func TestClassID_UnmarshalJSON_badInput_badly_encoded_ImplID_value(t *testing.T) {
-	tv := `{ "type": "psa.impl-id", "value": ";" }`
-
-	var actual ClassID
-	err := actual.UnmarshalJSON([]byte(tv))
-
-	assert.EqualError(t, err, "cannot unmarshal class id: illegal base64 data at input byte 0")
 	assert.Equal(t, "", actual.Type())
 }
 
@@ -313,40 +237,6 @@ func TestClassID_SetUUID_GetUUID_OK(t *testing.T) {
 	uuid, err := class.GetUUID()
 	require.NoError(t, err)
 	assert.Equal(t, TestUUID, uuid)
-}
-
-func Test_NewImplIDClassID(t *testing.T) {
-	classID, err := NewImplIDClassID(nil)
-	expected := [32]byte{}
-	require.NoError(t, err)
-	assert.Equal(t, expected[:], classID.Bytes())
-
-	taggedImplID := TaggedImplID(TestImplID)
-
-	for _, v := range []any{
-		TestImplID,
-		&TestImplID,
-		taggedImplID,
-		&taggedImplID,
-		taggedImplID.Bytes(),
-	} {
-		classID, err = NewImplIDClassID(v)
-		require.NoError(t, err)
-		assert.Equal(t, taggedImplID.Bytes(), classID.Bytes())
-	}
-
-	expected = [32]byte{
-		0x61, 0x63, 0x6d, 0x65, 0x2d, 0x69, 0x6d, 0x70,
-		0x6c, 0x65, 0x6d, 0x65, 0x6e, 0x74, 0x61, 0x74,
-		0x69, 0x6f, 0x6e, 0x2d, 0x69, 0x64, 0x2d, 0x30,
-		0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x31,
-	}
-	classID, err = NewImplIDClassID("YWNtZS1pbXBsZW1lbnRhdGlvbi1pZC0wMDAwMDAwMDE=")
-	require.NoError(t, err)
-	assert.Equal(t, expected[:], classID.Bytes())
-
-	_, err = NewImplIDClassID(7)
-	assert.EqualError(t, err, "unexpected type for psa.impl-id: int")
 }
 
 func Test_NewUUIDClassID(t *testing.T) {
@@ -577,6 +467,11 @@ func Test_NewBytesClassID_NOK(t *testing.T) {
 	}
 }
 
+func Test_MustNewBytesClassID(t *testing.T) {
+	MustNewBytesClassID([]byte{0x01, 0x02, 0x03, 0x04})
+	assert.Panics(t, func() { MustNewBytesClassID(7) })
+}
+
 func TestClassID_MarshalCBOR_Bytes(t *testing.T) {
 	tv, err := NewBytesClassID(TestBytes)
 	require.NoError(t, err)
@@ -657,17 +552,4 @@ func TestClassID_UnmarshalJSON_Bytes_NOK(t *testing.T) {
 			assert.EqualError(t, err, tv.Err)
 		})
 	}
-}
-
-func TestClassID_ImplID(t *testing.T) {
-	var implID ImplID
-	copy(implID[:], MustHexDecode(t,
-		"deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"))
-
-	var classID ClassID
-
-	classID.SetImplID(implID)
-	other, err := classID.GetImplID()
-	assert.NoError(t, err)
-	assert.Equal(t, implID, other)
 }

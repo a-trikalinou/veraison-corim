@@ -88,18 +88,25 @@ func TestDigests_Valid_empty(t *testing.T) {
 
 	assert.EqualError(t, d.Valid(), "digest at index 0: unknown hash algorithm 666")
 }
+
 func TestDigests_AddDigest_unknown_algo(t *testing.T) {
 	d := NewDigests()
 	require.NotNil(t, d)
 
-	assert.Nil(t, d.AddDigest(0, []byte("0 is a reserved value")))
+	assert.NotNil(t, d.AddDigest(0, []byte("0 is a reserved value")))
+
+	err := d.Valid()
+	assert.ErrorContains(t, err, "digest at index 0: unknown hash algorithm")
 }
 
 func TestDigests_AddDigest_inconsistent_length_for_algo(t *testing.T) {
 	d := NewDigests()
 	require.NotNil(t, d)
 
-	assert.Nil(t, d.AddDigest(swid.Sha3_512, MustHexDecode(t, "deadbeef")))
+	assert.NotNil(t, d.AddDigest(swid.Sha3_512, MustHexDecode(t, "deadbeef")))
+
+	err := d.Valid()
+	assert.ErrorContains(t, err, "digest at index 0: length mismatch")
 }
 
 func TestDigests_MarshalJSON(t *testing.T) {
@@ -228,4 +235,14 @@ func TestDigests_Compare_False_PartialMatch(t *testing.T) {
 		AddDigest(swid.Sha256_64, MustHexDecode(t, "f39c2473a0c0f592"))
 
 	assert.False(t, claim.CompareAgainstReference(*ref))
+}
+
+func TestNewHashEntry(t *testing.T) {
+	// Valid hash entry
+	he := NewHashEntry(swid.Sha256, MustHexDecode(t, "e45b72f5c0c0b572db4d8d3ab7e97f368ff74e62347a824decb67a84e5224d75"))
+	assert.NotNil(t, he)
+
+	// Invalid hash entry - wrong length for algorithm
+	he = NewHashEntry(swid.Sha256, []byte{0x01, 0x02})
+	assert.Nil(t, he)
 }
